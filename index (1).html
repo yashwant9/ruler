@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SPAN PRO — no-camera distance measure</title>
+<style>
+  :root{
+    --tape:#F2C100;
+    --tape-dim:#A98700;
+    --ink:#121310;
+    --ink-2:#1C1E1A;
+    --ink-3:#272A24;
+    --paper:#EDEDE6;
+    --paper-dim:#9A9C92;
+    --rec:#E8442E;
+    --lock:#39C26B;
+    --mono:ui-monospace,"SF Mono","Roboto Mono","Cascadia Mono",Menlo,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:var(--sans);
+    display:flex;flex-direction:column;
+    min-height:100dvh;
+    overflow:hidden;
+    user-select:none;-webkit-user-select:none;
+  }
+
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px 10px;
+  }
+  .brand{
+    font-family:var(--mono);
+    font-size:15px;letter-spacing:.42em;font-weight:700;
+    color:var(--tape);
+  }
+  .brand small{
+    display:block;letter-spacing:.12em;font-weight:400;
+    font-size:9px;color:var(--paper-dim);margin-top:3px;
+  }
+  .mode-switch{
+    display:flex;border:1px solid var(--ink-3);border-radius:999px;overflow:hidden;
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  }
+  .mode-switch button{
+    background:none;border:none;color:var(--paper-dim);
+    padding:7px 14px;cursor:pointer;font:inherit;
+  }
+  .mode-switch button.on{background:var(--tape);color:var(--ink);font-weight:700}
+  .mode-switch button:focus-visible{outline:2px solid var(--tape);outline-offset:-2px}
+
+  main{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:0 18px}
+  .readout{
+    font-family:var(--mono);
+    font-size:clamp(64px,22vw,110px);
+    font-weight:700;line-height:1;
+    font-variant-numeric:tabular-nums;
+    color:var(--paper);
+    transition:color .2s;
+  }
+  .readout.live{color:var(--tape)}
+  .readout.locked{color:var(--lock)}
+  .unit{
+    font-family:var(--mono);font-size:14px;letter-spacing:.3em;
+    color:var(--paper-dim);text-transform:uppercase;
+  }
+  .status{
+    margin-top:14px;height:18px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+    color:var(--paper-dim);text-align:center;
+    display:flex;align-items:center;gap:8px;
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3)}
+  .dot.rec{background:var(--rec);animation:blink 1s steps(2) infinite}
+  .dot.lock{background:var(--lock)}
+  @keyframes blink{50%{opacity:.25}}
+
+  /* ---------- axes + start-point arrow ---------- */
+  .nav{display:flex;align-items:center;gap:14px;margin-top:18px}
+  .arrow-wrap{
+    width:56px;height:56px;flex-shrink:0;
+    border:1px solid var(--ink-3);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--tape);background:var(--ink-2);
+    position:relative;
+  }
+  .arrow-wrap svg{width:28px;height:28px;transition:transform .12s linear}
+  .arrow-wrap.home{color:var(--lock)}
+  .arrow-wrap small{
+    position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);
+    font-family:var(--mono);font-size:8px;letter-spacing:.12em;
+    color:var(--paper-dim);text-transform:uppercase;white-space:nowrap;
+  }
+  .axes{display:flex;gap:8px}
+  .axis{
+    background:var(--ink-2);border:1px solid var(--ink-3);border-radius:10px;
+    padding:7px 10px;text-align:center;min-width:72px;
+  }
+  .axis span{
+    display:block;font-size:8.5px;letter-spacing:.08em;
+    color:var(--paper-dim);font-family:var(--mono);text-transform:uppercase;
+    margin-bottom:2px;
+  }
+  .axis b{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--paper);font-variant-numeric:tabular-nums}
+  .axis b.pos{color:var(--lock)}
+  .axis b.neg{color:var(--rec)}
+
+  .tape-wrap{
+    position:relative;width:100%;height:78px;
+    background:var(--tape);
+    overflow:hidden;
+    border-top:3px solid #000;border-bottom:3px solid #000;
+    flex-shrink:0;
+  }
+  canvas#tape{position:absolute;inset:0;width:100%;height:100%}
+  .needle{
+    position:absolute;left:50%;top:0;bottom:0;width:2px;
+    background:var(--rec);transform:translateX(-50%);
+    box-shadow:0 0 0 1px rgba(0,0,0,.25);
+  }
+
+  .controls{
+    display:flex;gap:12px;padding:18px 18px calc(18px + env(safe-area-inset-bottom));
+    flex-shrink:0;
+  }
+  .btn{
+    flex:1;border:none;border-radius:14px;
+    font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:.18em;
+    padding:18px 0;cursor:pointer;
+    transition:transform .06s,opacity .2s;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn:focus-visible{outline:2px solid var(--paper);outline-offset:2px}
+  .btn-start{background:var(--tape);color:var(--ink)}
+  .btn-stop{background:var(--rec);color:#fff;display:none}
+  .btn-reset{background:var(--ink-3);color:var(--paper);flex:0 0 92px;letter-spacing:.1em;font-weight:400}
+  .btn[disabled]{opacity:.4;cursor:default}
+
+  .hint{
+    font-size:11.5px;line-height:1.55;color:var(--paper-dim);
+    padding:0 22px 10px;text-align:center;flex-shrink:0;
+  }
+  .hint b{color:var(--paper);font-weight:600}
+
+  @media (prefers-reduced-motion:reduce){
+    .dot.rec{animation:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">SPAN&nbsp;PRO<small>no-camera distance measure</small></div>
+  <div class="mode-switch" role="tablist" aria-label="Measuring mode">
+    <button id="modeMotion" class="on" role="tab" aria-selected="true">MOTION</button>
+    <button id="modeGps" role="tab" aria-selected="false">GPS</button>
+  </div>
+</header>
+
+<main>
+  <div class="readout" id="readout">0.0</div>
+  <div class="unit" id="unitLabel">centimeters</div>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">place phone at start point, then press start</span></div>
+  <div class="nav">
+    <div class="arrow-wrap" id="arrowWrap">
+      <svg id="arrowSvg" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2 L18.5 16 L12 12.6 L5.5 16 Z" fill="currentColor"/>
+      </svg>
+      <small id="arrowLabel">to start</small>
+    </div>
+    <div class="axes">
+      <div class="axis"><span id="labX">x · right</span><b id="axX">+0.0</b></div>
+      <div class="axis"><span id="labY">y · forward</span><b id="axY">+0.0</b></div>
+      <div class="axis" id="axisZWrap"><span id="labZ">z · up</span><b id="axZ">+0.0</b></div>
+    </div>
+  </div>
+</main>
+
+<div class="tape-wrap" aria-hidden="true">
+  <canvas id="tape"></canvas>
+  <div class="needle"></div>
+</div>
+
+<div class="controls">
+  <button class="btn btn-reset" id="btnReset">RESET</button>
+  <button class="btn btn-start" id="btnStart">START</button>
+  <button class="btn btn-stop" id="btnStop">STOP</button>
+</div>
+
+<div class="hint" id="hint">
+  <b>Best technique:</b> lay the phone flat on the surface, press START and hold still while it calibrates.
+  Then <b>slide</b> the phone in one smooth glide to the end point and stop — the reading locks (green).
+  Don't rotate or lift the phone. You can do several glides; they add up.
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------------- state ---------------- */
+const $ = id => document.getElementById(id);
+const readout=$("readout"), unitLabel=$("unitLabel"), statusText=$("statusText"),
+      dot=$("dot"), btnStart=$("btnStart"), btnStop=$("btnStop"), btnReset=$("btnReset"),
+      hint=$("hint");
+
+let mode = "motion";
+let running = false;
+let distanceM = 0;
+
+/* ---------------- tape canvas ---------------- */
+const tape = $("tape"), ctx = tape.getContext("2d");
+function sizeTape(){
+  const dpr = window.devicePixelRatio||1;
+  tape.width = tape.clientWidth*dpr; tape.height = tape.clientHeight*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener("resize", sizeTape); sizeTape();
+
+function drawTape(){
+  const w = tape.clientWidth, h = tape.clientHeight;
+  ctx.clearRect(0,0,w,h);
+  const pxPerM = mode==="motion" ? 600 : 12;
+  const minorEvery = mode==="motion" ? 0.01 : 1;
+  const majorEvery = mode==="motion" ? 0.10 : 10;
+  const startM = (distanceM*pxPerM - w/2)/pxPerM;
+  const endM   = (distanceM*pxPerM + w/2)/pxPerM;
+  ctx.strokeStyle = "#000"; ctx.fillStyle = "#000";
+  ctx.font = "700 11px ui-monospace,monospace"; ctx.textAlign="center";
+  let m = Math.floor(startM/minorEvery)*minorEvery;
+  for(; m<=endM; m+=minorEvery){
+    if(m< -1e-9) continue;
+    const x = w/2 + (m - distanceM)*pxPerM;
+    const isMajor = Math.abs(m/majorEvery - Math.round(m/majorEvery)) < 1e-6;
+    const isMid = !isMajor && Math.abs((m*2)/majorEvery - Math.round((m*2)/majorEvery)) < 1e-6;
+    const len = isMajor? 30 : isMid? 20 : 12;
+    ctx.lineWidth = isMajor? 2.5 : 1.2;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,len); ctx.stroke();
+    if(isMajor){
+      const label = mode==="motion" ? (m*100).toFixed(0) : m.toFixed(0);
+      ctx.fillText(label, x, len+16);
+    }
+  }
+  const zx = w/2 - distanceM*pxPerM;
+  if(zx > -10 && zx < w+10){
+    ctx.fillStyle = "#E8442E";
+    ctx.beginPath(); ctx.moveTo(zx,h); ctx.lineTo(zx-6,h-12); ctx.lineTo(zx+6,h-12); ctx.closePath(); ctx.fill();
+  }
+}
+
+/* ---------------- display ---------------- */
+function setStatus(t, kind=""){ statusText.textContent=t; dot.className = "dot"+(kind?" "+kind:""); }
+function render(state=""){
+  let v,u;
+  if(distanceM < 1){ v=(distanceM*100).toFixed(1); u="centimeters"; }
+  else if(distanceM < 1000){ v=distanceM.toFixed(2); u="meters"; }
+  else { v=(distanceM/1000).toFixed(3); u="kilometers"; }
+  readout.textContent = v; unitLabel.textContent = u;
+  readout.className = "readout"+(state==="locked"?" locked":(running?" live":""));
+  updateNav();
+  drawTape();
+}
+
+/* signed per-axis readout + arrow pointing back to the start point */
+function updateNav(){
+  const vec = mode==="motion"
+    ? [M.pos[0], M.pos[1], M.pos[2]]          // device frame: x right, y forward, z up
+    : [G.deltaE||0, G.deltaN||0, 0];          // gps: east, north
+  const setAx = (el, meters) => {
+    const val = mode==="motion" ? meters*100 : meters;     // cm vs m
+    const dp  = mode==="motion" ? 1 : 0;
+    el.textContent = (val>=0?"+":"") + val.toFixed(dp);
+    el.className = Math.abs(val) < 0.05 ? "" : (val>0 ? "pos" : "neg");
+  };
+  setAx($("axX"), vec[0]);
+  setAx($("axY"), vec[1]);
+  setAx($("axZ"), vec[2]);
+
+  /* arrow: direction from current position back to start (origin) */
+  const wrap=$("arrowWrap"), svg=$("arrowSvg");
+  const horiz = Math.hypot(vec[0], vec[1]);
+  const homeThresh = mode==="motion" ? 0.02 : 3;          // 2 cm / 3 m
+  if(horiz < homeThresh){
+    wrap.classList.add("home");
+    svg.style.transform = "rotate(0deg) scale(.7)";
+  } else {
+    wrap.classList.remove("home");
+    const angle = Math.atan2(-vec[0], -vec[1]) * 180/Math.PI;
+    svg.style.transform = "rotate("+angle.toFixed(1)+"deg)";
+  }
+}
+function fmtShort(){
+  return distanceM<1 ? (distanceM*100).toFixed(1)+" cm" : distanceM.toFixed(2)+" m";
+}
+
+/* =========================================================
+   MOTION MODE — segment integration with zero-velocity
+   drift cancellation (assumes you pause between glides)
+   ========================================================= */
+const M = {
+  vel:[0,0,0], pos:[0,0,0],
+  bias:[0,0,0],
+  calibrating:false, calibSamples:[], calibStart:0,
+  grav:null, gotEvent:false,
+  lastT:null,
+  moving:false, segStart:0, quiet:[], quietSince:null,
+};
+const START_THRESH = 0.30;   // m/s² — accel magnitude that begins a glide
+const STOP_THRESH  = 0.12;   // m/s² — quiet level that ends a glide
+const STOP_HOLD_S  = 0.30;   // must stay quiet this long to lock
+const CALIB_S      = 1.5;    // calibration duration
+const CALIB_MAX_STD= 0.09;   // restart calibration if noisier than this
+
+function resetMotion(){
+  M.vel=[0,0,0]; M.pos=[0,0,0]; M.bias=[0,0,0];
+  M.calibSamples=[]; M.grav=null; M.gotEvent=false;
+  M.lastT=null; M.moving=false; M.quiet=[]; M.quietSince=null;
+}
+
+function onMotion(e){
+  if(!running || mode!=="motion") return;
+  M.gotEvent = true;
+
+  const now = e.timeStamp ? e.timeStamp/1000 : performance.now()/1000;
+  let raw;
+  const acc = e.acceleration;
+  if(acc && acc.x!=null){
+    raw = [acc.x, acc.y, acc.z];
+  } else {
+    /* fallback: gravity removal via low-pass when only
+       accelerationIncludingGravity exists */
+    const ag = e.accelerationIncludingGravity;
+    if(!ag || ag.x==null){
+      stop();
+      if(location.protocol !== "file:"){
+        setStatus("this is a web preview ("+location.hostname+") which blocks sensors — download the file & open from your Files app");
+      } else {
+        setStatus("sensors off — Chrome ⋮ > Settings > Site settings > Motion sensors > allow");
+      }
+      return;
+    }
+    const k = 0.96;
+    M.grav = M.grav
+      ? [k*M.grav[0]+(1-k)*ag.x, k*M.grav[1]+(1-k)*ag.y, k*M.grav[2]+(1-k)*ag.z]
+      : [ag.x, ag.y, ag.z];
+    raw = [ag.x-M.grav[0], ag.y-M.grav[1], ag.z-M.grav[2]];
+  }
+
+  /* --- calibration: phone must be perfectly still --- */
+  if(M.calibrating){
+    if(M.calibSamples.length===0) M.calibStart = now;
+    M.calibSamples.push(raw);
+    if(now - M.calibStart >= CALIB_S){
+      const n = M.calibSamples.length;
+      const mean=[0,0,0];
+      for(const s of M.calibSamples) for(let i=0;i<3;i++) mean[i]+=s[i]/n;
+      let varSum=0;
+      for(const s of M.calibSamples){
+        const dx=s[0]-mean[0], dy=s[1]-mean[1], dz=s[2]-mean[2];
+        varSum += (dx*dx+dy*dy+dz*dz)/n;
+      }
+      if(Math.sqrt(varSum) > CALIB_MAX_STD){
+        M.calibSamples=[];                 // too shaky — restart window
+        setStatus("too shaky — hold completely still…", "rec");
+        return;
+      }
+      M.bias = mean;
+      M.calibrating=false; M.lastT=now;
+      setStatus("ready — glide to the end point", "rec");
+      if(navigator.vibrate) navigator.vibrate(40);
+    } else {
+      setStatus("hold still… calibrating "+
+        Math.ceil(CALIB_S-(now-M.calibStart))+"s", "rec");
+    }
+    return;
+  }
+
+  if(M.lastT==null){ M.lastT=now; return; }
+  let dt = now - M.lastT; M.lastT = now;
+  if(dt<=0 || dt>0.2) return;
+
+  const dev = [raw[0]-M.bias[0], raw[1]-M.bias[1], raw[2]-M.bias[2]];
+  const mag = Math.hypot(dev[0],dev[1],dev[2]);
+
+  M.quiet.push(mag); if(M.quiet.length>10) M.quiet.shift();
+  const avg = M.quiet.reduce((s,x)=>s+x,0)/M.quiet.length;
+
+  if(!M.moving){
+    /* idle: hold position perfectly, wait for a glide to begin */
+    if(avg > START_THRESH){
+      M.moving = true; M.segStart = now; M.quietSince=null;
+      M.vel=[0,0,0];
+      setStatus("gliding…", "rec");
+    }
+    return;
+  }
+
+  /* --- integrate during the glide --- */
+  for(let i=0;i<3;i++){
+    M.vel[i] += dev[i]*dt;
+    M.pos[i] += M.vel[i]*dt;
+  }
+  distanceM = Math.hypot(M.pos[0],M.pos[1],M.pos[2]);
+  render();
+
+  /* --- glide ended? lock + cancel drift --- */
+  if(avg < STOP_THRESH){
+    if(M.quietSince==null) M.quietSince = now;
+    if(now - M.quietSince >= STOP_HOLD_S){
+      /* zero-velocity drift cancellation:
+         true velocity is 0 now, so any residual velocity is
+         accumulated sensor drift. Assume it grew linearly over
+         the glide → position error = v_residual * T / 2 */
+      const T = now - M.segStart;
+      for(let i=0;i<3;i++){
+        M.pos[i] -= M.vel[i]*T/2;
+        M.vel[i] = 0;
+      }
+      M.moving = false; M.quietSince=null;
+      distanceM = Math.hypot(M.pos[0],M.pos[1],M.pos[2]);
+      render("locked");
+      setStatus("locked: "+fmtShort()+" — glide again to add, or stop", "lock");
+      if(navigator.vibrate) navigator.vibrate(20);
+    }
+  } else {
+    M.quietSince = null;
+  }
+}
+
+async function startMotion(){
+  if(typeof DeviceMotionEvent!=="undefined" && typeof DeviceMotionEvent.requestPermission==="function"){
+    try{
+      const p = await DeviceMotionEvent.requestPermission();
+      if(p!=="granted"){ setStatus("motion permission denied"); return false; }
+    }catch{ setStatus("motion permission denied"); return false; }
+  }
+  resetMotion();
+  M.calibrating = true;
+  window.addEventListener("devicemotion", onMotion);
+  setStatus("hold still… calibrating", "rec");
+  setTimeout(()=>{
+    if(running && mode==="motion" && !M.gotEvent){
+      stop();
+      if(location.protocol !== "file:"){
+        setStatus("no sensor data — this preview ("+location.hostname+") blocks sensors. Download & open via Files app");
+      } else {
+        setStatus("no sensor data — enable Motion sensors in Chrome site settings");
+      }
+    }
+  }, 2500);
+  return true;
+}
+function stopMotion(){
+  window.removeEventListener("devicemotion", onMotion);
+}
+
+/* =========================================================
+   GPS MODE — distance from start coordinate (haversine)
+   ========================================================= */
+const G = { watchId:null, start:null };
+
+function haversine(a,b){
+  const R=6371000, d=Math.PI/180;
+  const dLat=(b.latitude-a.latitude)*d, dLon=(b.longitude-a.longitude)*d;
+  const s = Math.sin(dLat/2)**2 +
+            Math.cos(a.latitude*d)*Math.cos(b.latitude*d)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+
+function startGps(){
+  if(!("geolocation" in navigator)){ setStatus("geolocation not available"); return false; }
+  G.start=null; G.deltaN=0; G.deltaE=0;
+  G.watchId = navigator.geolocation.watchPosition(p=>{
+    const c=p.coords;
+    if(!G.start){
+      G.start=c;
+      setStatus("start fixed (±"+Math.round(c.accuracy)+" m) — walk away", "rec");
+      return;
+    }
+    const d=Math.PI/180, R=6371000;
+    G.deltaN = (c.latitude  - G.start.latitude )*d*R;
+    G.deltaE = (c.longitude - G.start.longitude)*d*R*Math.cos(G.start.latitude*d);
+    distanceM = haversine(G.start, c);
+    setStatus("tracking · accuracy ±"+Math.round(c.accuracy)+" m", "rec");
+    render();
+  }, err=>{
+    setStatus(err.code===1 ? "location permission denied" : "GPS error — go outdoors & retry");
+    stop();
+  }, {enableHighAccuracy:true, maximumAge:0, timeout:15000});
+  setStatus("getting GPS fix…", "rec");
+  return true;
+}
+function stopGps(){
+  if(G.watchId!=null){ navigator.geolocation.clearWatch(G.watchId); G.watchId=null; }
+}
+
+/* ---------------- start / stop / reset ---------------- */
+async function start(){
+  distanceM=0; render();
+  const ok = mode==="motion" ? await startMotion() : startGps();
+  if(!ok) return;
+  running = true;
+  btnStart.style.display="none"; btnStop.style.display="block";
+  render();
+}
+function stop(){
+  running=false;
+  stopMotion(); stopGps();
+  btnStart.style.display="block"; btnStop.style.display="none";
+  setStatus("final: "+fmtShort()+" — press start to measure again");
+  if(navigator.vibrate) navigator.vibrate([30,60,30]);
+  render();
+}
+function reset(){
+  stop(); distanceM=0;
+  resetMotion(); G.deltaN=0; G.deltaE=0;
+  render();
+  setStatus("place phone at start point, then press start");
+}
+
+btnStart.addEventListener("click", start);
+btnStop.addEventListener("click", stop);
+btnReset.addEventListener("click", reset);
+
+/* ---------------- mode switch ---------------- */
+function setMode(m){
+  if(running) stop();
+  mode=m; distanceM=0;
+  resetMotion(); G.deltaN=0; G.deltaE=0;
+  $("modeMotion").classList.toggle("on", m==="motion");
+  $("modeGps").classList.toggle("on", m==="gps");
+  $("modeMotion").setAttribute("aria-selected", m==="motion");
+  $("modeGps").setAttribute("aria-selected", m==="gps");
+  if(m==="motion"){
+    $("labX").textContent="x · right"; $("labY").textContent="y · forward"; $("labZ").textContent="z · up";
+    $("axisZWrap").style.display="";
+    $("arrowLabel").textContent="to start";
+  }else{
+    $("labX").textContent="east"; $("labY").textContent="north";
+    $("axisZWrap").style.display="none";
+    $("arrowLabel").textContent="to start · ↑=N";
+  }
+  hint.innerHTML = m==="motion"
+    ? "<b>Best technique:</b> lay the phone flat on the surface, press START and hold still while it calibrates. Then <b>slide</b> the phone in one smooth glide to the end point and stop — the reading locks (green). Moving back toward the start <b>reduces</b> the distance; the arrow always points back to your start point. Don't rotate the phone."
+    : "<b>GPS mode</b>: works outdoors with clear sky. Press START at your starting point, walk anywhere — distance from the start point updates live, with signed east/north offsets. Accuracy is roughly \u00b13\u20135 m, so it suits distances of 20 m and up.";
+  setStatus("place phone at start point, then press start");
+  render();
+}
+$("modeMotion").addEventListener("click", ()=>setMode("motion"));
+$("modeGps").addEventListener("click", ()=>setMode("gps"));
+
+/* keep screen awake while measuring (best effort) */
+let wakeLock=null;
+document.addEventListener("visibilitychange", async ()=>{
+  if(document.visibilityState==="visible" && running && "wakeLock" in navigator)
+    wakeLock = await navigator.wakeLock.request("screen").catch(()=>null);
+});
+btnStart.addEventListener("click", async ()=>{
+  if("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen").catch(()=>null);
+});
+
+render();
+})();
+</script>
+</body>
+</html>
